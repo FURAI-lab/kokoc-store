@@ -54,6 +54,19 @@ docs/
 public/             — static assets (Cloudflare Assets)
 ```
 
+## Security
+
+Production-grade HTTP security headers applied to every response:
+
+| Header | Value |
+|--------|-------|
+| `Content-Security-Policy` | strict CSP, `default-src 'self'`, blocks inline scripts |
+| `Permissions-Policy` | disables camera, microphone, geolocation, payment, usb |
+| `Strict-Transport-Security` | max-age 1 year — enforces HTTPS |
+| `Referrer-Policy` | `no-referrer` |
+| `X-Content-Type-Options` | `nosniff` |
+| `X-Frame-Options` | `DENY` — prevents clickjacking |
+
 ## Local dev
 
 ```bash
