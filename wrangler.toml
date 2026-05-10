@@ -1,0 +1,26 @@
+name = "kokoc-worker"
+main = "src/index.js"
+compatibility_date = "2026-04-03"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "kokoc-store"
+database_id = "0fe20d35-f1a6-4a93-87ad-1837fc61842b"
+
+# Future store bindings:
+#
+# [[kv_namespaces]]
+# binding = "CACHE"
+# id = "replace-me"
+#
+[[r2_buckets]]
+binding = "PRODUCT_IMAGES"
+bucket_name = "kokoc-store-images"
+
+[[routes]]
+pattern = "kokoc.store"
+custom_domain = true
+
+[assets]
+directory = "./public"
+binding = "ASSETS"

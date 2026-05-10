@@ -1,0 +1,25 @@
+# Wrangler local dev state
+.wrangler/
+
+# Secrets
+.dev.vars
+.env
+.env.*
+
+# macOS
+.DS_Store
+__MACOSX/
+
+# Node
+node_modules/
+
+# Large media files — stored in R2, not in git
+# Favicons (favsmall.png, favbig.jpg) stay in repo
+public/*.png
+public/*.jpg
+public/*.jpeg
+public/*.webp
+!public/favsmall.png
+!public/favbig.jpg
+public/images/
+public/crops/

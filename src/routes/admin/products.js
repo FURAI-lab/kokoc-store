@@ -1,0 +1,160 @@
+import { jsonResponse } from "../../lib/response.js";
+
+function id() {
+  return crypto.randomUUID();
+}
+
+// ── Products ──────────────────────────────────────────────
+
+export async function listProducts(env) {
+  const { results } = await env.DB.prepare(`
+    SELECT p.id, p.slug, p.title, p.description, p.brand, p.status,
+           p.created_at, p.updated_at,
+           COUNT(v.id) AS variant_count
+    FROM products p
+    LEFT JOIN product_variants v ON v.product_id = p.id
+    GROUP BY p.id
+    ORDER BY p.created_at DESC
+    LIMIT 200
+  `).all();
+  return jsonResponse({ ok: true, products: results });
+}
+
+export async function getProduct(env, productId) {
+  const product = await env.DB.prepare(
+    `SELECT * FROM products WHERE id = ?`
+  ).bind(productId).first();
+
+  if (!product) return jsonResponse({ ok: false, error: "Not found" }, { status: 404 });
+
+  const { results: variants } = await env.DB.prepare(
+    `SELECT * FROM product_variants WHERE product_id = ? ORDER BY created_at`
+  ).bind(productId).all();
+
+  const { results: images } = await env.DB.prepare(
+    `SELECT * FROM product_images WHERE product_id = ? ORDER BY position`
+  ).bind(productId).all();
+
+  return jsonResponse({ ok: true, product, variants, images });
+}
+
+export async function createProduct(env, body) {
+  const { title, slug, description, brand = "Kokoc Store", status = "draft" } = body;
+  if (!title || !slug) return jsonResponse({ ok: false, error: "title and slug required" }, { status: 400 });
+
+  const productId = id();
+  await env.DB.prepare(`
+    INSERT INTO products (id, slug, title, description, brand, status)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).bind(productId, slug, title, description || null, brand, status).run();
+
+  return jsonResponse({ ok: true, id: productId }, { status: 201 });
+}
+
+export async function updateProduct(env, productId, body) {
+  const { title, slug, description, brand, status } = body;
+  await env.DB.prepare(`
+    UPDATE products SET
+      title = COALESCE(?, title),
+      slug = COALESCE(?, slug),
+      description = COALESCE(?, description),
+      brand = COALESCE(?, brand),
+      status = COALESCE(?, status),
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).bind(title ?? null, slug ?? null, description ?? null, brand ?? null, status ?? null, productId).run();
+
+  return jsonResponse({ ok: true });
+}
+
+export async function deleteProduct(env, productId) {
+  await env.DB.prepare(`DELETE FROM products WHERE id = ?`).bind(productId).run();
+  return jsonResponse({ ok: true });
+}
+
+// ── Variants ──────────────────────────────────────────────
+
+export async function createVariant(env, productId, body) {
+  const { sku, title, size_label, color_label, price_minor, compare_at_minor, inventory_quantity = 0 } = body;
+  if (!sku || !title || price_minor == null) {
+    return jsonResponse({ ok: false, error: "sku, title, price_minor required" }, { status: 400 });
+  }
+
+  const variantId = id();
+  await env.DB.prepare(`
+    INSERT INTO product_variants
+      (id, product_id, sku, title, size_label, color_label, price_minor, compare_at_minor, inventory_quantity)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    variantId, productId, sku, title,
+    size_label ?? null, color_label ?? null,
+    price_minor, compare_at_minor ?? null, inventory_quantity
+  ).run();
+
+  return jsonResponse({ ok: true, id: variantId }, { status: 201 });
+}
+
+export async function updateVariant(env, variantId, body) {
+  const { title, size_label, color_label, price_minor, compare_at_minor, inventory_quantity, is_active } = body;
+  await env.DB.prepare(`
+    UPDATE product_variants SET
+      title = COALESCE(?, title),
+      size_label = COALESCE(?, size_label),
+      color_label = COALESCE(?, color_label),
+      price_minor = COALESCE(?, price_minor),
+      compare_at_minor = COALESCE(?, compare_at_minor),
+      inventory_quantity = COALESCE(?, inventory_quantity),
+      is_active = COALESCE(?, is_active),
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).bind(
+    title ?? null, size_label ?? null, color_label ?? null,
+    price_minor ?? null, compare_at_minor ?? null,
+    inventory_quantity ?? null, is_active ?? null,
+    variantId
+  ).run();
+
+  return jsonResponse({ ok: true });
+}
+
+export async function deleteVariant(env, variantId) {
+  await env.DB.prepare(`DELETE FROM product_variants WHERE id = ?`).bind(variantId).run();
+  return jsonResponse({ ok: true });
+}
+
+// ── Images (R2) ───────────────────────────────────────────
+
+export async function uploadImage(env, productId, request) {
+  if (!env.PRODUCT_IMAGES) {
+    return jsonResponse({ ok: false, error: "R2 bucket not bound" }, { status: 503 });
+  }
+
+  const formData = await request.formData();
+  const file = formData.get("file");
+  if (!file) return jsonResponse({ ok: false, error: "file required" }, { status: 400 });
+
+  const ext = file.name.split(".").pop().toLowerCase();
+  const r2Key = `products/${productId}/${id()}.${ext}`;
+  const position = parseInt(formData.get("position") || "0", 10);
+  const variantId = formData.get("variant_id") || null;
+  const altText = formData.get("alt_text") || null;
+
+  await env.PRODUCT_IMAGES.put(r2Key, file.stream(), {
+    httpMetadata: { contentType: file.type }
+  });
+
+  const imageId = id();
+  await env.DB.prepare(`
+    INSERT INTO product_images (id, product_id, variant_id, r2_key, alt_text, position)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).bind(imageId, productId, variantId, r2Key, altText, position).run();
+
+  return jsonResponse({ ok: true, id: imageId, r2_key: r2Key }, { status: 201 });
+}
+
+export async function deleteImage(env, imageId) {
+  const img = await env.DB.prepare(`SELECT r2_key FROM product_images WHERE id = ?`).bind(imageId).first();
+  if (img && env.PRODUCT_IMAGES) await env.PRODUCT_IMAGES.delete(img.r2_key);
+  await env.DB.prepare(`DELETE FROM product_images WHERE id = ?`).bind(imageId).run();
+  return jsonResponse({ ok: true });
+}

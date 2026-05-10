@@ -1,0 +1,10 @@
+{
+  "name": "kokoc-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --input-type=module -e \"await import('./src/index.js')\"",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  }
+}
