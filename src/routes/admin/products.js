@@ -1,14 +1,17 @@
 import { jsonResponse } from "../../lib/response.js";
 
-function id() {
-  return crypto.randomUUID();
-}
+function id() { return crypto.randomUUID(); }
 
-// ── Products ──────────────────────────────────────────────
+const VALID_BADGES = new Set(["new", "hit", "limited", null]);
+
+// ── Products ──────────────────────────────────────────────────
 
 export async function listProducts(env) {
   const { results } = await env.DB.prepare(`
-    SELECT p.id, p.slug, p.title, p.description, p.brand, p.status,
+    SELECT p.id, p.slug, p.title, p.description, p.brand,
+           p.status, p.badge, p.tags, p.category, p.sku,
+           p.price_minor, p.compare_at_minor, p.inventory_quantity,
+           p.visibility, p.sizes, p.colors,
            p.created_at, p.updated_at,
            COUNT(v.id) AS variant_count
     FROM products p
@@ -39,30 +42,96 @@ export async function getProduct(env, productId) {
 }
 
 export async function createProduct(env, body) {
-  const { title, slug, description, brand = "Kokoc Store", status = "draft" } = body;
-  if (!title || !slug) return jsonResponse({ ok: false, error: "title and slug required" }, { status: 400 });
+  const {
+    title, slug, description,
+    brand = "Kokoc Store",
+    status = "draft",
+    badge = null,
+    tags = null,
+    category = null,
+    sku = null,
+    price_minor = 0,
+    compare_at_minor = null,
+    inventory_quantity = 0,
+    visibility = "visible",
+    sizes = null,
+    colors = null,
+  } = body;
+
+  if (!title || !slug) {
+    return jsonResponse({ ok: false, error: "title and slug required" }, { status: 400 });
+  }
+  if (!VALID_BADGES.has(badge)) {
+    return jsonResponse({ ok: false, error: "badge must be: new | hit | limited | null" }, { status: 400 });
+  }
 
   const productId = id();
   await env.DB.prepare(`
-    INSERT INTO products (id, slug, title, description, brand, status)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).bind(productId, slug, title, description || null, brand, status).run();
+    INSERT INTO products
+      (id, slug, title, description, brand, status, badge, tags,
+       category, sku, price_minor, compare_at_minor, inventory_quantity,
+       visibility, sizes, colors)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    productId, slug, title, description || null, brand, status, badge, tags || null,
+    category || null, sku || null,
+    price_minor, compare_at_minor ?? null,
+    inventory_quantity,
+    visibility,
+    sizes || null, colors || null
+  ).run();
 
   return jsonResponse({ ok: true, id: productId }, { status: 201 });
 }
 
 export async function updateProduct(env, productId, body) {
-  const { title, slug, description, brand, status } = body;
+  const {
+    title, slug, description, brand, status, badge, tags,
+    category, sku, price_minor, compare_at_minor,
+    inventory_quantity, visibility, sizes, colors,
+  } = body;
+
+  if (badge !== undefined && !VALID_BADGES.has(badge)) {
+    return jsonResponse({ ok: false, error: "badge must be: new | hit | limited | null" }, { status: 400 });
+  }
+
   await env.DB.prepare(`
     UPDATE products SET
-      title = COALESCE(?, title),
-      slug = COALESCE(?, slug),
-      description = COALESCE(?, description),
-      brand = COALESCE(?, brand),
-      status = COALESCE(?, status),
-      updated_at = CURRENT_TIMESTAMP
+      title              = COALESCE(?, title),
+      slug               = COALESCE(?, slug),
+      description        = COALESCE(?, description),
+      brand              = COALESCE(?, brand),
+      status             = COALESCE(?, status),
+      badge              = CASE WHEN ? IS NOT NULL THEN ? ELSE badge END,
+      tags               = CASE WHEN ? IS NOT NULL THEN ? ELSE tags END,
+      category           = COALESCE(?, category),
+      sku                = COALESCE(?, sku),
+      price_minor        = COALESCE(?, price_minor),
+      compare_at_minor   = COALESCE(?, compare_at_minor),
+      inventory_quantity = COALESCE(?, inventory_quantity),
+      visibility         = COALESCE(?, visibility),
+      sizes              = COALESCE(?, sizes),
+      colors             = COALESCE(?, colors),
+      updated_at         = CURRENT_TIMESTAMP
     WHERE id = ?
-  `).bind(title ?? null, slug ?? null, description ?? null, brand ?? null, status ?? null, productId).run();
+  `).bind(
+    title       ?? null,
+    slug        ?? null,
+    description ?? null,
+    brand       ?? null,
+    status      ?? null,
+    body.hasOwnProperty("badge") ? "SET" : null, badge ?? null,
+    body.hasOwnProperty("tags")  ? "SET" : null, tags  ?? null,
+    category           ?? null,
+    sku                ?? null,
+    price_minor        ?? null,
+    compare_at_minor   ?? null,
+    inventory_quantity ?? null,
+    visibility         ?? null,
+    sizes              ?? null,
+    colors             ?? null,
+    productId
+  ).run();
 
   return jsonResponse({ ok: true });
 }
@@ -72,10 +141,17 @@ export async function deleteProduct(env, productId) {
   return jsonResponse({ ok: true });
 }
 
-// ── Variants ──────────────────────────────────────────────
+// ── Variants ──────────────────────────────────────────────────
 
 export async function createVariant(env, productId, body) {
-  const { sku, title, size_label, color_label, price_minor, compare_at_minor, inventory_quantity = 0 } = body;
+  const {
+    sku, title,
+    size_label, crocs_size,
+    color_label,
+    price_minor, compare_at_minor,
+    inventory_quantity = 0,
+  } = body;
+
   if (!sku || !title || price_minor == null) {
     return jsonResponse({ ok: false, error: "sku, title, price_minor required" }, { status: 400 });
   }
@@ -83,34 +159,50 @@ export async function createVariant(env, productId, body) {
   const variantId = id();
   await env.DB.prepare(`
     INSERT INTO product_variants
-      (id, product_id, sku, title, size_label, color_label, price_minor, compare_at_minor, inventory_quantity)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, product_id, sku, title, size_label, crocs_size, color_label,
+       price_minor, compare_at_minor, inventory_quantity)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     variantId, productId, sku, title,
-    size_label ?? null, color_label ?? null,
-    price_minor, compare_at_minor ?? null, inventory_quantity
+    size_label   ?? null,
+    crocs_size   ?? null,
+    color_label  ?? null,
+    price_minor,
+    compare_at_minor ?? null,
+    inventory_quantity
   ).run();
 
   return jsonResponse({ ok: true, id: variantId }, { status: 201 });
 }
 
 export async function updateVariant(env, variantId, body) {
-  const { title, size_label, color_label, price_minor, compare_at_minor, inventory_quantity, is_active } = body;
+  const {
+    title, size_label, crocs_size,
+    color_label, price_minor,
+    compare_at_minor, inventory_quantity, is_active,
+  } = body;
+
   await env.DB.prepare(`
     UPDATE product_variants SET
-      title = COALESCE(?, title),
-      size_label = COALESCE(?, size_label),
-      color_label = COALESCE(?, color_label),
-      price_minor = COALESCE(?, price_minor),
-      compare_at_minor = COALESCE(?, compare_at_minor),
+      title              = COALESCE(?, title),
+      size_label         = COALESCE(?, size_label),
+      crocs_size         = COALESCE(?, crocs_size),
+      color_label        = COALESCE(?, color_label),
+      price_minor        = COALESCE(?, price_minor),
+      compare_at_minor   = COALESCE(?, compare_at_minor),
       inventory_quantity = COALESCE(?, inventory_quantity),
-      is_active = COALESCE(?, is_active),
-      updated_at = CURRENT_TIMESTAMP
+      is_active          = COALESCE(?, is_active),
+      updated_at         = CURRENT_TIMESTAMP
     WHERE id = ?
   `).bind(
-    title ?? null, size_label ?? null, color_label ?? null,
-    price_minor ?? null, compare_at_minor ?? null,
-    inventory_quantity ?? null, is_active ?? null,
+    title              ?? null,
+    size_label         ?? null,
+    crocs_size         ?? null,
+    color_label        ?? null,
+    price_minor        ?? null,
+    compare_at_minor   ?? null,
+    inventory_quantity ?? null,
+    is_active          ?? null,
     variantId
   ).run();
 
@@ -122,7 +214,7 @@ export async function deleteVariant(env, variantId) {
   return jsonResponse({ ok: true });
 }
 
-// ── Images (R2) ───────────────────────────────────────────
+// ── Images (R2) ───────────────────────────────────────────────
 
 export async function uploadImage(env, productId, request) {
   if (!env.PRODUCT_IMAGES) {
@@ -133,14 +225,14 @@ export async function uploadImage(env, productId, request) {
   const file = formData.get("file");
   if (!file) return jsonResponse({ ok: false, error: "file required" }, { status: 400 });
 
-  const ext = file.name.split(".").pop().toLowerCase();
-  const r2Key = `products/${productId}/${id()}.${ext}`;
-  const position = parseInt(formData.get("position") || "0", 10);
+  const ext    = file.name.split(".").pop().toLowerCase();
+  const r2Key  = `products/${productId}/${id()}.${ext}`;
+  const position  = parseInt(formData.get("position") || "0", 10);
   const variantId = formData.get("variant_id") || null;
-  const altText = formData.get("alt_text") || null;
+  const altText   = formData.get("alt_text")   || null;
 
   await env.PRODUCT_IMAGES.put(r2Key, file.stream(), {
-    httpMetadata: { contentType: file.type }
+    httpMetadata: { contentType: file.type },
   });
 
   const imageId = id();
@@ -153,7 +245,10 @@ export async function uploadImage(env, productId, request) {
 }
 
 export async function deleteImage(env, imageId) {
-  const img = await env.DB.prepare(`SELECT r2_key FROM product_images WHERE id = ?`).bind(imageId).first();
+  const img = await env.DB.prepare(
+    `SELECT r2_key FROM product_images WHERE id = ?`
+  ).bind(imageId).first();
+
   if (img && env.PRODUCT_IMAGES) await env.PRODUCT_IMAGES.delete(img.r2_key);
   await env.DB.prepare(`DELETE FROM product_images WHERE id = ?`).bind(imageId).run();
   return jsonResponse({ ok: true });

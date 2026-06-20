@@ -7,12 +7,10 @@ binding = "DB"
 database_name = "kokoc-store"
 database_id = "0fe20d35-f1a6-4a93-87ad-1837fc61842b"
 
-# Future store bindings:
-#
-# [[kv_namespaces]]
-# binding = "CACHE"
-# id = "replace-me"
-#
+[[kv_namespaces]]
+binding = "KV"
+id = "9d48825394eb4a7183e5a209ef7ba702"
+
 [[r2_buckets]]
 binding = "PRODUCT_IMAGES"
 bucket_name = "kokoc-store-images"
@@ -24,3 +22,4 @@ custom_domain = true
 [assets]
 directory = "./public"
 binding = "ASSETS"
+not_found_handling = "none"

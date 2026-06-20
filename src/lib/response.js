@@ -8,6 +8,26 @@ export function htmlResponse(html, init = {}) {
   });
 }
 
+export function xmlResponse(xml, init = {}) {
+  return new Response(xml, {
+    ...init,
+    headers: {
+      "content-type": "application/xml; charset=UTF-8",
+      ...(init.headers || {})
+    }
+  });
+}
+
+export function textResponse(text, init = {}) {
+  return new Response(text, {
+    ...init,
+    headers: {
+      "content-type": "text/plain; charset=UTF-8",
+      ...(init.headers || {})
+    }
+  });
+}
+
 export function jsonResponse(data, init = {}) {
   return new Response(JSON.stringify(data, null, 2), {
     ...init,

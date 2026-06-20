@@ -1,6 +1,6 @@
 # Kokoc Store
 
-> Crocs store with Jibbitz gamification — edge-native on Cloudflare Workers + D1 + R2.  
+> Crocs store with Jibbitz gamification — edge-native on Cloudflare Workers + D1 + R2.
 > Built by [FURAI lab](https://github.com/FURAI-lab) — specialized in AI systems, edge-native architecture, and digital autonomy.
 
 Live at [kokoc.store](https://kokoc.store) · Work in progress
@@ -12,69 +12,86 @@ Live at [kokoc.store](https://kokoc.store) · Work in progress
 - **Runtime** — Cloudflare Workers (edge-native, no framework)
 - **DB** — Cloudflare D1 (SQLite at the edge)
 - **Storage** — Cloudflare R2
+- **KV** — Cloudflare KV
 - **Routing** — native Workers fetch handler
+- **Testing** — Vitest + `@cloudflare/vitest-pool-workers`
 
 ## What's live
 
-- Landing page at `kokoc.store`
+- Landing page with product catalog at `kokoc.store`
+- Product detail pages (`/product/:slug`)
+- Catalog browsing, brand pages (Adidas Originals), collabs page
+- Cart API (`/api/cart`)
+- Delivery page — CDEK courier door-to-door
+- Custom 404 page with branded assets
+- SEO: structured sitemap, `robots.txt`, JSON-LD, on-page metadata
+- i18n support
+- Admin panel (auth, products, orders)
+- Newsletter subscribe (`/api/subscribe`)
 - Security headers on all routes
-- Responsive desktop/mobile banner delivery
-- Newsletter subscribe at `/api/subscribe`
-- D1 schema: products, variants, images, carts, orders, subscribers
+- Jibbitz mini-game page
 
 ## Roadmap
 
-- [ ] Wire D1 to real product catalog
-- [ ] Product detail page `/product/:slug`
-- [ ] Cart and checkout flow
-- [ ] Payment integration
-- [ ] **Jibbitz mini-game** — catch Jibbitz, earn a discount on Crocs (AI-powered)
+- [ ] Payment integration (YooKassa)
+- [ ] Order flow polish end-to-end
+- [ ] Expand catalog coverage
 
 ## Structure
 
 ```
 src/
-  index.js          — entry point
-  server.js         — main router
-  config/app.js     — app config
+  index.js              — entry point
+  server.js             — main router
+  config/app.js          — app config
   lib/
-    security.js     — CSP and security headers
-    response.js     — response helpers
-    products.js     — catalog queries
-    email.js        — email notifications
+    security.js          — CSP and security headers
+    response.js          — response helpers
+    products.js          — catalog queries
+    catalog.js           — catalog logic
+    collabs.js            — brand collabs logic
+    email.js             — email notifications
+    i18n.js               — internationalization
+    seo.js                — SEO metadata, JSON-LD
+    sitemap.js            — sitemap generation
   pages/
-    landing.js      — landing page HTML
-    coming-soon.js  — placeholder
+    landing.js            — landing page HTML
+    catalog.js            — catalog page
+    product.js            — product detail page
+    about.js               — about page
+    adidas.js              — Adidas Originals brand page
+    collabs.js             — collabs page
+    delivery.js            — delivery info (CDEK courier)
+    minigame.js            — Jibbitz mini-game
+    not-found.js           — 404 page
+    admin.js                — admin panel page
   routes/
-    api/            — public API routes
+    api/                  — public API routes (cart, subscribe, etc.)
+    admin/                — admin routes (auth, products, orders)
 db/
-  migrations/       — D1 schema migrations
+  migrations/             — D1 schema migrations
 docs/
   architecture-v1.md
-public/             — static assets (Cloudflare Assets)
+public/                   — static assets (Cloudflare Assets)
+test/                     — Vitest test suite
 ```
-
-## Security
-
-Production-grade HTTP security headers applied to every response:
-
-| Header | Value |
-|--------|-------|
-| `Content-Security-Policy` | strict CSP, `default-src 'self'`, blocks inline scripts |
-| `Permissions-Policy` | disables camera, microphone, geolocation, payment, usb |
-| `Strict-Transport-Security` | max-age 1 year — enforces HTTPS |
-| `Referrer-Policy` | `no-referrer` |
-| `X-Content-Type-Options` | `nosniff` |
-| `X-Frame-Options` | `DENY` — prevents clickjacking |
 
 ## Local dev
 
 ```bash
+npm install
 npm run dev       # wrangler dev
 ```
 
-Requires `wrangler.toml` with real bindings (D1, R2).  
+Requires `wrangler.toml` with real bindings (D1, R2, KV).
 Secrets go through `wrangler secret put`, never in files.
+
+## Testing
+
+```bash
+npm test          # vitest run
+npm run test:watch
+```
 
 ## Deploy
 
@@ -84,5 +101,5 @@ npm run deploy    # wrangler deploy
 
 ---
 
-Built by [FURAI lab](https://github.com/FURAI-lab) — Architecting the future of digital autonomy.  
+Built by [FURAI lab](https://github.com/FURAI-lab) — Architecting the future of digital autonomy.
 Specialized in long-term AI memory, edge-native systems, Hono, and Web3.

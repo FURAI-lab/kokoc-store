@@ -7,6 +7,7 @@ import {
 } from "./products.js";
 import { listOrders, getOrder, updateOrderStatus } from "./orders.js";
 import { renderAdminPage } from "../../pages/admin.js";
+import { COLLABS } from "../../lib/collabs.js";
 
 // ── Login / Logout ─────────────────────────────────────────
 
@@ -63,6 +64,10 @@ async function handleStats(env) {
   }
 }
 
+function defaultCollabs() {
+  return COLLABS.map(c => ({ ...c }));
+}
+
 // ── Main router ────────────────────────────────────────────
 
 export async function handleAdminRequest(request, env) {
@@ -99,6 +104,127 @@ export async function handleAdminRequest(request, env) {
         LIMIT 500
       `).all();
       return jsonResponse({ ok: true, subscribers: results, total: results.length });
+    }
+
+    // Collabs
+    if (path === "/admin/api/collabs" && method === "GET") {
+      if (!env.KV) return jsonResponse({ ok: true, collabs: defaultCollabs() });
+      const raw = await env.KV.get("collabs:list");
+      const list = raw ? JSON.parse(raw) : defaultCollabs();
+      return jsonResponse({ ok: true, collabs: list });
+    }
+
+    if (path === "/admin/api/collabs" && method === "PUT") {
+      if (!env.KV) return jsonResponse({ ok: false, error: "KV namespace not bound" }, { status: 503 });
+      const { collabs } = await request.json();
+      await env.KV.put("collabs:list", JSON.stringify(collabs));
+      return jsonResponse({ ok: true });
+    }
+
+    if (path === "/admin/api/collabs/upload" && method === "POST") {
+      const bucket = env.PRODUCT_IMAGES;
+      if (!bucket) return jsonResponse({ ok: false, error: "R2 bucket not bound" }, { status: 503 });
+
+      const form = await request.formData();
+      const file = form.get("file");
+      if (!file) return jsonResponse({ ok: false, error: "No file" }, { status: 400 });
+
+      const ext = file.name.split(".").pop().toLowerCase();
+      const key = `collabs/${crypto.randomUUID()}.${ext}`;
+      await bucket.put(key, file.stream(), { httpMetadata: { contentType: file.type } });
+      return jsonResponse({ ok: true, url: `/cdn/${key}` });
+    }
+
+    // ── Clients ─────────────────────────────────────────────
+    if (path === "/admin/api/clients" && method === "GET") {
+      const { results } = await env.DB.prepare(`
+        SELECT
+          customer_email                          AS email,
+          MAX(shipping_name)                      AS name,
+          MAX(customer_phone)                     AS phone,
+          MAX(shipping_city)                      AS city,
+          COUNT(*)                                AS order_count,
+          SUM(total_minor)                        AS total_minor,
+          MAX(created_at)                         AS last_order_at,
+          MIN(created_at)                         AS first_order_at
+        FROM orders
+        GROUP BY customer_email
+        ORDER BY last_order_at DESC
+        LIMIT 500
+      `).all();
+      return jsonResponse({ ok: true, clients: results });
+    }
+
+    // ── Categories ──────────────────────────────────────────
+    if (path === "/admin/api/categories" && method === "GET") {
+      const raw = await env.KV?.get("catalog:categories");
+      const list = raw ? JSON.parse(raw) : ["Clogs", "Sandals", "Accessories"];
+      return jsonResponse({ ok: true, categories: list });
+    }
+    if (path === "/admin/api/categories" && method === "PUT") {
+      if (!env.KV) return jsonResponse({ ok: false, error: "KV not bound" }, { status: 503 });
+      const { categories } = await request.json();
+      await env.KV.put("catalog:categories", JSON.stringify(categories));
+      return jsonResponse({ ok: true });
+    }
+
+    // ── Brands ──────────────────────────────────────────────
+    if (path === "/admin/api/brands" && method === "GET") {
+      const raw = await env.KV?.get("catalog:brands");
+      const list = raw ? JSON.parse(raw) : ["Crocs", "Adidas Originals"];
+      return jsonResponse({ ok: true, brands: list });
+    }
+    if (path === "/admin/api/brands" && method === "PUT") {
+      if (!env.KV) return jsonResponse({ ok: false, error: "KV not bound" }, { status: 503 });
+      const { brands } = await request.json();
+      await env.KV.put("catalog:brands", JSON.stringify(brands));
+      return jsonResponse({ ok: true });
+    }
+
+    // ── Discounts ────────────────────────────────────────────
+    if (path === "/admin/api/discounts" && method === "GET") {
+      const raw = await env.KV?.get("catalog:discounts");
+      const list = raw ? JSON.parse(raw) : [];
+      return jsonResponse({ ok: true, discounts: list });
+    }
+    if (path === "/admin/api/discounts" && method === "PUT") {
+      if (!env.KV) return jsonResponse({ ok: false, error: "KV not bound" }, { status: 503 });
+      const { discounts } = await request.json();
+      await env.KV.put("catalog:discounts", JSON.stringify(discounts));
+      return jsonResponse({ ok: true });
+    }
+
+    // ── Settings ────────────────────────────────────────────
+    if (path === "/admin/api/settings" && method === "GET") {
+      if (!env.KV) return jsonResponse({ ok: true, settings: {} });
+      const whatsapp = await env.KV.get("settings:whatsapp_number").catch(() => "");
+      return jsonResponse({ ok: true, settings: { whatsapp_number: whatsapp || "" } });
+    }
+    if (path === "/admin/api/settings" && method === "PUT") {
+      if (!env.KV) return jsonResponse({ ok: false, error: "KV not bound" }, { status: 503 });
+      const body = await request.json();
+      const whatsapp = (body.whatsapp_number || "").trim();
+      await env.KV.put("settings:whatsapp_number", whatsapp);
+      return jsonResponse({ ok: true });
+    }
+
+    // Adidas Originals / Crocs — list products by brand
+    if ((path === "/admin/api/adidas" || path === "/admin/api/crocs") && method === "GET") {
+      const brand = path === "/admin/api/adidas" ? "Adidas Originals" : "Crocs";
+      const { results } = await env.DB.prepare(`
+        SELECT p.id, p.slug, p.title, p.description, p.brand,
+               p.status, p.badge, p.tags, p.category, p.sku,
+               p.visibility, p.colors,
+               p.created_at, p.updated_at,
+               COUNT(v.id) AS variant_count
+        FROM products p
+        LEFT JOIN product_variants v ON v.product_id = p.id
+        WHERE p.brand = ?
+        GROUP BY p.id
+        ORDER BY p.created_at DESC
+        LIMIT 200
+      `).bind(brand).all();
+      return jsonResponse({ ok: true, products: results });
     }
 
     // Products
