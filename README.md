@@ -101,5 +101,4 @@ npm run deploy    # wrangler deploy
 
 ---
 
-Built by [FURAI lab](https://github.com/FURAI-lab) — Architecting the future of digital autonomy.
-Specialized in long-term AI memory, edge-native systems, Hono, and Web3.
+Built by [FURAI LAB](https://github.com/FURAI-LAB)
