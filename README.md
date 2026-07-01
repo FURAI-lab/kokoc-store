@@ -1,7 +1,7 @@
 # Kokoc Store
 
 > Crocs store with Jibbitz gamification — edge-native on Cloudflare Workers + D1 + R2.
-> Built by [FURAI lab](https://github.com/FURAI-lab) — specialized in AI systems, edge-native architecture, and digital autonomy.
+> Built by [FURAI lab](https://github.com/FURAI-LAB) — specialized in AI systems, edge-native architecture, and digital autonomy.
 
 Live at [kokoc.store](https://kokoc.store) · Work in progress
 
